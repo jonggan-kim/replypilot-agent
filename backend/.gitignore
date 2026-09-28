@@ -1,0 +1,13 @@
+.env
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+*.db
+*.sqlite
+*.sqlite3
+credentials*.json
+client_secret*.json
+__pycache__/
+*.py[cod]
+

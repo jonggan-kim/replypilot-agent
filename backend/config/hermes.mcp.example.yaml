@@ -1,0 +1,18 @@
+mcp_servers:
+  replypilot:
+    command: "uv"
+    args: ["--directory", "/ABSOLUTE/PATH/TO/backend", "run", "replypilot-mcp"]
+    enabled: true
+    trust: untrusted
+    supports_parallel_tool_calls: false
+    sampling:
+      enabled: false
+    tools:
+      include:
+        - scan_inbox
+        - get_run_status
+        - list_review_queue
+        - review_draft
+      resources: false
+      prompts: false
+
