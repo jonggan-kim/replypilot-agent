@@ -1,8 +1,8 @@
 # ReplyPilot backend
 
-LangGraph 기반의 이메일 분류·회신 초안 에이전트입니다. 기본 실행은 자격증명과 외부 호출이 전혀 없는 `mock` 모드입니다. 실제 모드에서도 사람의 승인 전에는 Gmail 변경이 없고, 승인 후에도 **초안만 생성**합니다. 이메일 전송 API는 구현하거나 노출하지 않습니다.
+A LangGraph agent that triages email and drafts replies. By default it runs in `mock` mode, with no credentials and no external calls. Even in live mode it changes nothing in Gmail before a person approves, and after approval it **only creates a draft**. No email-sending API is implemented or exposed.
 
-## 구성
+## Architecture
 
 ```text
 Hermes Agent ──stdio MCP──> ReplyPilot
@@ -13,7 +13,7 @@ Hermes Agent ──stdio MCP──> ReplyPilot
                               └─ LangSmith traces / evaluations
 ```
 
-상태 전이는 다음과 같습니다.
+State transitions:
 
 ```text
 scan → triage ──no reply──> complete
@@ -24,9 +24,9 @@ scan → triage ──no reply──> complete
                                   └─ approve/revise → Gmail draft
 ```
 
-## 1. 로컬 mock 실행
+## 1. Run locally in mock mode
 
-Python 3.12 또는 3.13과 `uv`를 사용합니다.
+Requires Python 3.12 or 3.13 and `uv`.
 
 ```bash
 uv sync
@@ -36,7 +36,7 @@ uv run replypilot-eval
 uv run replypilot-api
 ```
 
-API는 `127.0.0.1:8000`에만 바인딩됩니다. `.env`의 `REPLYPILOT_CONTROL_TOKEN`을 충분히 긴 임의 값으로 변경한 뒤 요청에 `X-ReplyPilot-Key` 헤더로 전달합니다.
+The API binds to `127.0.0.1:8000` only. Change `REPLYPILOT_CONTROL_TOKEN` in `.env` to a long random value and send it in the `X-ReplyPilot-Key` header.
 
 ```bash
 curl -s http://127.0.0.1:8000/health
@@ -46,9 +46,9 @@ curl -s -X POST http://127.0.0.1:8000/api/runs/scan \
   -d '{"max_results":3}'
 ```
 
-## 2. Hermes Gateway 연결
+## 2. Connect the Hermes Gateway
 
-`~/.hermes/config.yaml`에 아래 서버 하나만 추가합니다. `/ABSOLUTE/PATH/backend`은 이 디렉터리의 절대 경로로 바꿉니다.
+Add this one server to `~/.hermes/config.yaml`. Replace `/ABSOLUTE/PATH/backend` with the absolute path of this directory.
 
 ```yaml
 mcp_servers:
@@ -70,35 +70,35 @@ mcp_servers:
       prompts: false
 ```
 
-연결 확인:
+Check the connection:
 
 ```bash
 hermes mcp test replypilot
 ```
 
-`trust: untrusted`는 쓰기 가능 도구에 Hermes 승인 UI를 추가합니다. `review_draft`는 승인 시 Gmail 초안을 만들 수 있으므로 병렬 호출을 끕니다. `sampling`도 끄고, LLM 호출은 ReplyPilot과 LangSmith에서 일관되게 추적합니다.
+`trust: untrusted` adds Hermes's approval UI to tools that can write. `review_draft` can create a Gmail draft when approved, so parallel calls are off. `sampling` is off too, so every LLM call is traced consistently in ReplyPilot and LangSmith.
 
-## 3. Gmail OAuth 설정
+## 3. Gmail OAuth setup
 
-1. Google Cloud Console에서 Gmail API를 활성화합니다.
-2. OAuth 동의 화면을 구성하고 **Desktop app** 유형의 OAuth 클라이언트를 만듭니다.
-3. 다운로드한 client secret JSON을 저장소 밖에 보관합니다.
-4. `.env`에 절대 경로를 설정하고 OAuth를 한 번 수행합니다.
+1. Enable the Gmail API in Google Cloud Console.
+2. Configure the OAuth consent screen and create an OAuth client of type **Desktop app**.
+3. Keep the downloaded client-secret JSON outside the repository.
+4. Set its absolute path in `.env` and run the OAuth flow once.
 
 ```bash
 REPLYPILOT_GOOGLE_CLIENT_SECRET_PATH=/secure/path/client_secret.json uv run replypilot-google-auth
 ```
 
-Refresh token은 평문 파일이 아니라 운영체제 keyring에 저장됩니다. 앱은 다음 두 범위만 요청합니다.
+The refresh token is stored in the operating system keyring, not in a plain-text file. The app requests only two scopes:
 
-- `gmail.readonly`: 후보·스레드 읽기
-- `gmail.compose`: 초안 생성
+- `gmail.readonly`: read candidate messages and threads
+- `gmail.compose`: create drafts
 
-Google의 `gmail.compose` 범위 자체에는 전송 능력도 포함되지만, 이 코드베이스에는 `send` 메서드·API·MCP 도구가 없습니다. 운영 환경에서는 Google OAuth 앱 검증 및 제한 범위 보안 평가 요건도 별도로 확인해야 합니다.
+Google's `gmail.compose` scope itself also allows sending, but this codebase has no `send` method, API or MCP tool. For production, also check Google's OAuth app verification and restricted-scope security assessment requirements.
 
-## 4. OpenAI + LangSmith live 모드
+## 4. Live mode with OpenAI and LangSmith
 
-키를 코드, Git, Hermes YAML 또는 채팅에 넣지 말고 로컬 secret 환경에만 설정합니다.
+Keep keys out of code, Git, Hermes YAML and chat; set them only in your local secret environment.
 
 ```bash
 export OPENAI_API_KEY='...'
@@ -113,16 +113,16 @@ export REPLYPILOT_GOOGLE_CLIENT_SECRET_PATH='/secure/path/client_secret.json'
 uv run replypilot-api
 ```
 
-`uv run replypilot-eval`은 항상 로컬 품질 게이트를 출력합니다. `LANGSMITH_API_KEY`가 있으면 `replypilot-smoke-eval-v1` 데이터셋을 만들거나 재사용해 LangSmith 실험도 실행합니다. MVP 합격 기준은 회신 필요 분류 정확도와 평균 초안 검토 점수 `≥ 4/5`입니다.
+`uv run replypilot-eval` always prints the local quality gate. With `LANGSMITH_API_KEY` set, it also creates or reuses the `replypilot-smoke-eval-v1` dataset and runs a LangSmith experiment. The MVP pass criteria are reply-needed classification accuracy and an average draft review score of `≥ 4/5`.
 
-## 보안 기본값
+## Security defaults
 
-- 자동 전송 없음; Gmail 초안만 생성
-- 사람 승인 전 외부 쓰기 없음
-- API 제어 토큰 비교, localhost 바인딩
-- OAuth refresh token은 OS keyring 저장
-- `.env`, client secret, SQLite 데이터베이스는 Git 제외
-- Hermes MCP 도구 allowlist 및 `untrusted` 승인 정책
-- raw 이메일 본문·토큰을 애플리케이션 로그에 기록하지 않음
-- hosted LangSmith trace의 입력·출력은 기본 숨김; 내용 기반 진단은 비식별 평가 데이터만 사용
-- checkpoint에는 워크플로 재개용 원문이 포함되므로 운영 DB는 암호화 디스크·접근통제·보존기간을 적용
+- No automatic sending; Gmail drafts only
+- No external writes before human approval
+- API control-token check, localhost binding
+- OAuth refresh token stored in the OS keyring
+- `.env`, client secrets and the SQLite database excluded from Git
+- Hermes MCP tool allowlist and `untrusted` approval policy
+- Raw email bodies and tokens never written to application logs
+- Inputs and outputs hidden in hosted LangSmith traces by default; content-level diagnosis uses de-identified evaluation data only
+- Checkpoints hold the original text needed to resume a workflow, so a production database needs an encrypted disk, access control and a retention period
